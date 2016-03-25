@@ -1,0 +1,20 @@
+#!/bin/sh
+
+#for f in /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor; do
+#	echo conservative > $f
+#done
+
+for f in /sys/bus/pci/devices/*/power/control; do
+	echo auto > $f
+done
+unset f
+for f in /sys/class/scsi_host/*/link_power_management_policy; do
+	echo min_power > $f
+done
+
+echo auto > /sys/devices/pci0000:00/0000:00:1d.0/usb2/2-1/2-1.6/power/control
+
+ethtool -s eth0 wol d
+#iw dev wlan0 set power_save on
+
+sysctl vm.dirty_writeback_centisecs=1500
