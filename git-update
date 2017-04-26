@@ -6,6 +6,7 @@ typeset -A tracked
 state=
 
 SUBDIRECTORY_OK=1 NONGIT_OK=0 OPTIONS_SPEC= LONG_USAGE= USAGE=
+GIT_TEXTDOMAINDIR= GIT_INTERNAL_GETTEXT_TEST_FALLBACKS= GIT_GETTEXT_POISON=
 
 . "`git --exec-path`/git-sh-setup"
 git_dir_init
