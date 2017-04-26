@@ -1,0 +1,23 @@
+[core]
+	autocrlf = input
+	editor = gvim -f
+[alias]
+	a = add -p
+	b = branch
+	c = commit
+	co = checkout
+	cb = checkout -b
+	d = diff
+	l = log --graph --format='format:%h%d [%aD] (%an) %s'
+	s = status
+	cv = commit -v
+	ff = merge --ff-only
+	dc = diff --cached
+	rp = remote prune origin
+	bv = branch -vv
+	cf = config --global
+	cln = clean -dx -e .idea
+	alias = config --global --get-regexp 'alias.*'
+	squash = merge --squash
+[push]
+	default = simple

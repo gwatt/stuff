@@ -1,0 +1,46 @@
+#!/bin/ksh
+
+set -eu
+
+typeset -A tracked
+state=
+
+SUBDIRECTORY_OK=1 NONGIT_OK=0 OPTIONS_SPEC= LONG_USAGE= USAGE=
+
+. "`git --exec-path`/git-sh-setup"
+git_dir_init
+cd_to_toplevel
+
+while read line; do
+	if [[ "$line" =~ ^\[branch\s+\"(.+)\"\]$ ]]; then
+		state=in-branch
+		branch="${.sh.match[1]}"
+		typeset -A tracked["$branch"]=()
+	elif [[ "$line" =~ ^\[ ]]; then
+		state=
+	elif [[ "$state" = in-branch ]]; then
+		IFS=' =' read option value <<< "$line"
+		tracked[$branch][$option]=$value
+	fi
+done < .git/config
+
+current_branch="`git branch | awk '{if( $1 == "*" ) { print $2 }}'`"
+
+for branch in ${!tracked[@]}; do
+	localname="${tracked[$branch][merge]}"
+	localref="`git rev-parse --verify -q $localname`" || { say No local branch ${localname#refs/heads/}; continue; }
+	remotename="refs/remotes/${tracked[$branch][remote]}/$branch"
+	remoteref="`git rev-parse --verify -q $remotename`" || { say No remote branch ${remotename#refs/remotes/}; continue; }
+	if [[ $localref = $remoteref ]]; then
+		say $branch is up to date
+	elif git rev-list --parents $remoteref | grep -q $localref ; then
+		if [[ $branch = $current_branch ]]; then
+			git merge --ff-only || { say Unable to update current branch; continue; }
+		else
+			git update-ref "$localname" "$remotename"
+		fi
+		say Updating $branch
+	else
+		say $branch cannot be automatically updated
+	fi
+done
