@@ -10,7 +10,7 @@
     (syntax-violation 'lambda-list "required argument after optional" arg-list a)))
 
 (define (parse-args args)
-  (let loop ([arg* args] [pre-opt? #t] [req #'()] [opt #'()] [def #'()] [checks #'()])
+  (let loop ([arg* args] [pre-opt? #t] [req '()] [opt '()] [def '()] [checks '()])
     (if (null? arg*)
         (values req opt def checks)
         (syntax-case (car arg*) (default: satisfies:)
@@ -31,13 +31,11 @@
           [_ (syntax-violation 'lambda-list "Improper argument list" args arg*)]))))
 
 (define (extract-arg-ids args)
-  (with-syntax
-    ([(ids ...) (map (lambda (a)
-                       (syntax-case a ()
-                         [(id _ ...) #'id]
-                         [id #'id]))
-                  args)])
-    #'(ids ...)))
+  (map (lambda (a)
+         (syntax-case a ()
+           [(id _ ...) #'id]
+           [id #'id]))
+    args))
 
 (define (find-duplicates ls)
   (let loop ([set (make-enumeration '())] [items ls] [dupes '()])
@@ -49,40 +47,44 @@
               (loop (make-enumeration (cons h (enum-set->list set)))
                 (cdr items) dupes))))))
 
-(define (syntax-cdr x)
-  (syntax-case x ()
-    [(i * ...) #'(* ...)]))
-
 (define (build-lambda arg-list rest body)
-  (let* ([ids (extract-arg-ids arg-list)]
+  (let* ([ids (extract-arg-ids (if rest
+                                   (cons rest arg-list)
+                                   arg-list))]
          [dupes (find-duplicates (map syntax->datum ids))])
     (for-each (lambda (id)
                 (unless (identifier? id)
-                  (syntax-violation 'lambda-list "Invalid identifier" x id)))
+                  (syntax-violation 'lambda-list "Invalid identifier" #`(#,@arg-list . #,rest) id)))
       ids)
     (when dupes
-      (syntax-violation 'lambda-list "Duplicate identifiers in lambda-list" x dupes))
-    (let-values ([(req opt def checks) (parse-args arg-list)]
-                 #;[(rest-req rest-opt rest-def rest-check) (parse-args rest)])
-      (if (null? (syntax->list opt))
-          #`(lambda #,req #,@checks #,@body)
+      (syntax-violation 'lambda-list "Duplicate identifiers in lambda-list" #`(#,@arg-list . #,rest) dupes))
+    (let-values ([(req opt def checks) (parse-args arg-list)])
+      (if (null? opt)
+          (if rest
+              #`(lambda (#,@req . #,rest) #,@checks #,@body)
+              #`(lambda #,req #,@checks #,@body))
           #`(letrec
               ([self
-                (case-lambda
-                  #,@(let loop ([given req] [absent opt] [default def])
-                       (syntax-case absent ()
-                         [() #`((#,given #,@checks #,@body))]
-                         [(a abs* ...)
-                          #`((#,given (self #,@given #,@default))
-                             #,@(loop #`(#,@given a) #'(abs* ...) (syntax-cdr default)))])))])
-              self)))))
+                #,(if rest
+                      #`(lambda (#,@req #,@opt . #,rest)
+                          #,@checks #,@body)
+                      #`(lambda (#,@req #,@opt)
+                          #,@checks #,@body))])
+              (case-lambda
+                #,@(let loop ([given req] [absent opt] [default def])
+                     (if (null? absent)
+                         (if rest
+                             #`(((#,@given . #,rest) (apply self #,@given #,rest)))
+                             #`((#,given (self #,@given))))
+                         #`((#,given (self #,@given #,@default))
+                            #,@(loop #`(#,@given #,(car absent)) (cdr absent) (cdr default)))))))))))
 
 (define-syntax lambda-list
   (lambda (x)
-    (syntax-case x (default: satisfies: rest:)
+    (syntax-case x (default: satisfies:)
       [(_ a* b b* ...) (identifier? #'a*)
        #'(lambda a* b b* ...)]
-      [(_ (a* ... (rest: a other ...)) b b* ...)
-       (build-lambda #'(a* ...) #'(a other ...) #'(b b* ...))]
       [(_ (a* ...) b b* ...)
-       (build-lambda #'(a* ...) #f #'(b b* ...))])))
+       (build-lambda #'(a* ...) #f #'(b b* ...))]
+      [(_ (a* ... . rest) b b* ...) (identifier? #'rest)
+       (build-lambda #'(a* ...) #'rest #'(b b* ...))])))
