@@ -3,45 +3,45 @@
 set -eu
 
 typeset -A tracked
-state=
 
-SUBDIRECTORY_OK=1 NONGIT_OK=0 OPTIONS_SPEC= LONG_USAGE= USAGE=
-GIT_TEXTDOMAINDIR= GIT_INTERNAL_GETTEXT_TEST_FALLBACKS= GIT_GETTEXT_POISON=
+export SUBDIRECTORY_OK=1 NONGIT_OK=0 OPTIONS_SPEC='' LONG_USAGE='' USAGE='' GIT_TEXTDOMAINDIR='' GIT_GETTEXT_POISON=''
+export GIT_TEST_GETTEXT_POISON=''
 
-. "`git --exec-path`/git-sh-setup"
+source "$(git --exec-path)/git-sh-setup"
 git_dir_init
-cd_to_toplevel
 
-while read line; do
-	if [[ "$line" =~ ^\[branch\s+\"(.+)\"\]$ ]]; then
-		state=in-branch
-		branch="${.sh.match[1]}"
-		typeset -A tracked["$branch"]=()
-	elif [[ "$line" =~ ^\[ ]]; then
-		state=
-	elif [[ "$state" = in-branch ]]; then
-		IFS=' =' read option value <<< "$line"
-		tracked[$branch][$option]=$value
+git fetch --all
+
+git config -l | while IFS='=' read key val; do
+	if [[ "$key" =~ ^branch\.(.+)\.(.+)$ ]]; then
+		tracked[${.sh.match[1]}]+=([${.sh.match[2]}]=$val)
 	fi
-done < .git/config
+done
+current_branch=
 
-current_branch="`git branch | awk '{if( $1 == "*" ) { print $2 }}'`"
+if refname="$(git rev-parse --symbolic-full-name --verify -q HEAD --)"; then
+	current_branch="${refname#refs/heads/}"
+fi
 
-for branch in ${!tracked[@]}; do
+for branch in "${!tracked[@]}"; do
 	localname="${tracked[$branch][merge]}"
-	localref="`git rev-parse --verify -q $localname`" || { say No local branch ${localname#refs/heads/}; continue; }
+	localref="$(git rev-parse --verify -q "$localname")" || {
+		say "No local branch ${localname#refs/heads/}"
+		continue
+	}
 	remotename="refs/remotes/${tracked[$branch][remote]}/$branch"
-	remoteref="`git rev-parse --verify -q $remotename`" || { say No remote branch ${remotename#refs/remotes/}; continue; }
-	if [[ $localref = $remoteref ]]; then
-		say $branch is up to date
-	elif git rev-list --parents $remoteref | grep -q $localref ; then
-		if [[ $branch = $current_branch ]]; then
-			git merge --ff-only || { say Unable to update current branch; continue; }
-		else
-			git update-ref "$localname" "$remotename"
-		fi
-		say Updating $branch
+	remoteref="$(git rev-parse --verify -q "$remotename")" || {
+		say "Remote ${remotename#refs/remotes/} does not exist for ${localname#refs/heads/}"
+		continue
+	}
+	if [[ "$localref" = "$remoteref" ]]; then
+		say "$branch is up to date"
+	elif [[ "$branch" = "$current_branch" ]]; then
+		git merge --ff-only || { say "Unable to update $branch"; continue; }
+	elif git rev-list --parents "$remoteref" | grep -q "$localref" ; then
+		git update-ref "$localname" "$remotename"
+		say "Updating $branch"
 	else
-		say $branch cannot be automatically updated
+		say "$branch cannot be automatically updated"
 	fi
 done
